@@ -1,5 +1,5 @@
 from json import JSONEncoder
-
+import hashlib
 class File:
     def __init__(self) -> None:
         self.name = None
@@ -9,16 +9,17 @@ class File:
         pass
     
     def hash_func(self, dir):
-        file = open(str(dir) + "/" + str(self.name), "r")
+        file = open(str(dir) + "/" + str(self.name), "rb")
         hashThis = file.read()
-        return hash(hashThis)
-        pass
+        return str(hashlib.md5(hashThis).hexdigest())
     
 
 class FileList:
     def __init__(self, node_id) -> None:
         self.files = []
         self.node_id = node_id
+        self.node_port = None
+        self.node_ip = None
         self.type = "filelist"
         pass
 

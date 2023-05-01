@@ -6,7 +6,7 @@ from p2p_types import File, FileList, Node, NodeList
 import threading
 
 TCP_IP = '127.0.0.1'
-TCP_PORT = 5005
+TCP_PORT = 5025
 BUFFER_SIZE = 2048  # Normally 1024, but we want fast response
 GLOBAL_NODE_LIST = NodeList()
 
@@ -32,11 +32,15 @@ lock = threading.Lock()
 def find(fileName):
     ret_nodeList = NodeList()
     for node in GLOBAL_NODE_LIST.nodes:
-        updatelist(node.ip, node.port)
-        for file in node.filelist.files:
-            if file.name == fileName:
-                ret_nodeList.add(node)
-                break
+        retval = updatelist(node.ip, node.port)
+        if retval == -1:
+            print("Skipping node")
+            continue
+        with lock:
+            for file in node.filelist.files:
+                if file.name == fileName:
+                    ret_nodeList.add(node)
+                    break
     return ret_nodeList
 
 
@@ -46,6 +50,7 @@ def main():
     #listen for connections from peers
     
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((TCP_IP, TCP_PORT))
     s.listen(10)
 
@@ -78,11 +83,13 @@ def main():
                 node = Node(json_data['ip'], json_data['port'])
                 node.id = json_data['id']
                 node.status = json_data['status']
-                for i in json_data['filelist']:
+                node.filelist = FileList(json_data['id'])
+                for i in json_data['filelist']['files']:
+                    # print(i)
                     temp = File()
                     temp.name = i['name']
                     temp.size = i['size']
-                    temp.hash = i['hash']
+                    temp.hash_val = i['hash_val']
                     node.filelist.add(temp)
                 with lock:
                     GLOBAL_NODE_LIST.add(node)
@@ -90,10 +97,12 @@ def main():
                 #send an ACK
             
             elif json_data["type"] == "filelist":
+                found = False
                 with lock:
                     for i in GLOBAL_NODE_LIST.nodes:
                         if i.id == json_data['node_id']:
                             i.filelist = FileList(json_data['node_id'])
+                            found = True
                             for j in json_data['files']:
                                 temp = File()
                                 temp.name = j['name']
@@ -101,7 +110,19 @@ def main():
                                 temp.hash_val = j['hash_val']
                                 i.filelist.add(temp)
                             break
-                
+                    if found == False:
+                        print("Node does not exist in global node list, adding")
+                        node = Node(json_data['node_ip'], json_data['node_port'] ) #unknown port
+                        node.id = json_data['node_id']
+                        node.status = 1
+                        node.filelist = FileList(json_data['node_id'])
+                        for j in json_data['files']:
+                            temp = File()
+                            temp.name = j['name']
+                            temp.size = j['size']
+                            temp.hash_val = j['hash_val']
+                            node.filelist.add(temp)
+                        GLOBAL_NODE_LIST.add(node)
             conn.send("ACK".encode())  # reply with ACK
     
     s.close()
@@ -112,7 +133,14 @@ def getload(ip, port):
 
     #send a request to the peer
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((ip, port))
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+
+        s.connect((ip, port))
+    except ConnectionRefusedError:
+        print("node with ip: " + ip + " and port: " + port + " is not responding")
+        s.close()
+        return -1
     s.send("getload".encode())
 
     #wait for a response
@@ -139,7 +167,13 @@ def getload(ip, port):
 def updatelist(ip,port):
     #send update lists to a peer 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((ip, port))
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.connect((ip, port))
+    except ConnectionRefusedError:
+        print("node with ip: " + ip + " and port: " + port + " is not responding")
+        s.close()
+        return -1
     s.send("updatelist".encode())
 
     #wait for a response
@@ -159,19 +193,21 @@ def updatelist(ip,port):
                         temp.size = j['size']
                         temp.hash_val = j['hash_val']
                         i.filelist.add(temp)
-                    break
+                    s.close()
+                    return
             #if were here then we have a new node
-            node = Node(json_data['ip'], json_data['port'])
-            node.id = json_data['id']
+            node = Node(ip, port)
+            node.id = json_data['node_id']
             node.status = 1
             for i in json_data['filelist']:
                 temp = File()
                 temp.name = i['name']
                 temp.size = i['size']
-                temp.hash = i['hash']
+                temp.hash = i['hash_val']
                 node.filelist.add(temp)
             GLOBAL_NODE_LIST.add(node)
-    s.close()
+        s.close()
+    
 
 
 
