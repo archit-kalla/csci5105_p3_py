@@ -8,7 +8,7 @@ class File:
         self.type= "file"
         pass
     
-    def hash(self, dir):
+    def hash_func(self, dir):
         file = open(str(dir) + "/" + str(self.name), "r")
         hashThis = file.read()
         return hash(hashThis)

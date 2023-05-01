@@ -61,9 +61,11 @@ def scan(dir):
             for item in path.iterdir():
                 if item.is_file():
                     file = File()
-                    file.name = str(item)
+                    name = str(item)
+                    name = name.split("/")[1]
+                    file.name = name
                     file.size = os.path.getsize(str(item))
-                    file.hash_val = file.hash()
+                    file.hash_val = file.hash_func(DIRECTORY)
                     filelist.add(file)
             return filelist
     return filelist
@@ -97,12 +99,12 @@ def download_thread(file, ip, port):
     LOAD+=1
     while correct_download == False:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind((NODE_TCP_IP, NODE_TCP_PORT))
+        s.bind((NODE_TCP_IP, NODE_TCP_PORT+10))
         s.listen(10)
         latency = getLatency(ip, port)
         s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s2.connect((ip, port))
-        cmd = "send " + str(file.name)+" "+str(NODE_TCP_IP)+" "+str(NODE_TCP_PORT)
+        cmd = "send " + str(file.name)+" "+str(NODE_TCP_IP)+" "+str(NODE_TCP_PORT+10)
         s2.send(cmd.encode())
 
         reply = s2.recv(BUFFER_SIZE)
@@ -130,7 +132,7 @@ def download_thread(file, ip, port):
         new_file = File()
         new_file.name = file.name
         new_file.size = os.path.getsize(file.name)
-        new_file.hash_val = new_file.hash(DIRECTORY)
+        new_file.hash_val = new_file.hash_func(DIRECTORY)
 
         if new_file.hash_val == file.hash_val:
             print("File downloaded successfully")
@@ -165,11 +167,8 @@ def download(file):
         if file.name == file.name:
             break
     
-
-    
     s.close()
-
-    # Check hash here.
+    download_thread_var = threading.Thread(target=download_thread, args=(file, ideal_node.ip, ideal_node.port))
 
     return
 
@@ -198,12 +197,12 @@ def getload(ip, port):
 
     #wait for a response
     reply = s.recv(BUFFER_SIZE)
-    reply = reply.decode()
-    #parse the response
-    if reply == "ACK":
-        print("ACK")
-    else:
+    if not reply:
         print("NACK")
+    else:
+        reply=reply.decode()
+        return int(str(reply))
+
 
     return
 
@@ -222,8 +221,7 @@ def init_connection():
     s.send(this_node_searlized.encode()) #send
     
     reply = s.recv(BUFFER_SIZE) # reply
-    reply = reply.decode()
-    if reply == "ACK":
+    if not reply:
         print("ACK")
     else:
         print("NACK")
@@ -250,18 +248,38 @@ def recv_conns():
             updatelist(conn)
 
             
+def command_loop():
+    while True:
+        usr_in = input("> ")
+        cmd = usr_in.split(" ")[0]
+        args = usr_in.split(" ")[1:]
 
+        if cmd == "download":
+            file_name = args[0]
+            download(file_name)
+        elif cmd == "updatelist":
+            updatelist()
+        elif cmd == "getload":
+            print(getload(args[0], args[1]))
+        elif cmd == "exit":
+            break
+        else:
+            print("Invalid command")
 
 
 
 def main():
     #main loop to interact with node
+    recv_conns_thread = threading.Thread(target=recv_conns)
     init_connection()
+    command_loop()
+    recv_conns_thread.start()
     return 0
 
 if __name__ == "__main__":
     NODE_TCP_IP = sys.argv[1]
     NODE_TCP_PORT = int(sys.argv[2])
     DIRECTORY = sys.argv[3]
+    main()
 
 
